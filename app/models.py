@@ -1,5 +1,6 @@
+
 from sqlalchemy import Column, Integer, String
-from app.database import Base
+from .database import Base
 
 class Movie(Base):
     __tablename__ = "movies"
@@ -7,3 +8,4 @@ class Movie(Base):
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, index=True)
     description = Column(String, index=True)
+    rating = Column(Integer)

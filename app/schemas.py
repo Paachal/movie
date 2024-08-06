@@ -1,8 +1,10 @@
+
 from pydantic import BaseModel
 
 class MovieBase(BaseModel):
     title: str
     description: str
+    rating: int
 
 class MovieCreate(MovieBase):
     pass

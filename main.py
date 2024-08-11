@@ -1,54 +1,67 @@
-# main.py
-
-from fastapi import FastAPI, Depends, HTTPException
-from sqlalchemy.orm import Session
-from app import crud, models, schemas
-from app.database import SessionLocal, engine, Base
-
-# Ensure all database tables are created
-Base.metadata.create_all(bind=engine)
+from fastapi import FastAPI, HTTPException, Depends
+from motor.motor_asyncio import AsyncIOMotorClient
+from bson import ObjectId
+from pydantic import BaseModel, Field
+from typing import List
 
 app = FastAPI()
 
-# Dependency to get the database session
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+# MongoDB connection
+MONGO_URL = "your_mongodb_connection_string_here"
+client = AsyncIOMotorClient(MONGO_URL)
+db = client.moviesdb
 
-# Endpoint to create a new movie
-@app.post("/movies/", response_model=schemas.Movie)
-def create_movie(movie: schemas.MovieCreate, db: Session = Depends(get_db)):
-    return crud.create_movie(db=db, movie=movie)
+# Pydantic models
+class MovieBase(BaseModel):
+    title: str
+    director: str
+    rating: float
 
-# Endpoint to read a movie by its ID
-@app.get("/movies/{movie_id}", response_model=schemas.Movie)
-def read_movie(movie_id: int, db: Session = Depends(get_db)):
-    db_movie = crud.get_movie(db, movie_id=movie_id)
-    if db_movie is None:
+class MovieCreate(MovieBase):
+    pass
+
+class Movie(MovieBase):
+    id: str = Field(default_factory=str)
+
+# Dependency to get the database
+async def get_db():
+    return db
+
+# Create a new movie
+@app.post("/movies/", response_model=Movie)
+async def create_movie(movie: MovieCreate, db = Depends(get_db)):
+    movie_dict = movie.dict()
+    result = await db.movies.insert_one(movie_dict)
+    movie_dict["_id"] = str(result.inserted_id)
+    return Movie(**movie_dict)
+
+# Read a movie by its ID
+@app.get("/movies/{movie_id}", response_model=Movie)
+async def read_movie(movie_id: str, db = Depends(get_db)):
+    movie = await db.movies.find_one({"_id": ObjectId(movie_id)})
+    if movie is None:
         raise HTTPException(status_code=404, detail="Movie not found")
-    return db_movie
+    return Movie(id=str(movie["_id"]), **movie)
 
-# Endpoint to read all movies
-@app.get("/movies/", response_model=list[schemas.Movie])
-def read_movies(skip: int = 0, limit: int = 10, db: Session = Depends(get_db)):
-    movies = crud.get_movies(db, skip=skip, limit=limit)
-    return movies
+# Read all movies
+@app.get("/movies/", response_model=List[Movie])
+async def read_movies(skip: int = 0, limit: int = 10, db = Depends(get_db)):
+    movies = await db.movies.find().skip(skip).limit(limit).to_list(length=limit)
+    return [Movie(id=str(movie["_id"]), **movie) for movie in movies]
 
-# Endpoint to update a movie
-@app.put("/movies/{movie_id}", response_model=schemas.Movie)
-def update_movie(movie_id: int, movie: schemas.MovieUpdate, db: Session = Depends(get_db)):
-    db_movie = crud.get_movie(db, movie_id=movie_id)
-    if db_movie is None:
+
+@app.put("/movies/{movie_id}", response_model=Movie)
+async def update_movie(movie_id: str, movie: MovieCreate, db = Depends(get_db)):
+    result = await db.movies.update_one({"_id": ObjectId(movie_id)}, {"$set": movie.dict()})
+    if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Movie not found")
-    return crud.update_movie(db=db, movie_id=movie_id, movie=movie)
+    updated_movie = await db.movies.find_one({"_id": ObjectId(movie_id)})
+    return Movie(id=str(updated_movie["_id"]), **updated_movie)
 
-# Endpoint to delete a movie
-@app.delete("/movies/{movie_id}", response_model=schemas.Movie)
-def delete_movie(movie_id: int, db: Session = Depends(get_db)):
-    db_movie = crud.get_movie(db, movie_id=movie_id)
-    if db_movie is None:
+# Delete a movie
+@app.delete("/movies/{movie_id}", response_model=Movie)
+async def delete_movie(movie_id: str, db = Depends(get_db)):
+    result = await db.movies.delete_one({"_id": ObjectId(movie_id)})
+    if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Movie not found")
-    return crud.delete_movie(db=db, movie_id=movie_id)
+    return {"message": "Movie deleted successfully"}

@@ -1,33 +1,26 @@
 # app/crud.py
+from .models import Movie
+from .database import db
+from bson import ObjectId
 
-from sqlalchemy.orm import Session
-from . import models, schemas
+async def create_movie(movie_data: dict) -> Movie:
+    movie = await db["movies"].insert_one(movie_data)
+    new_movie = await db["movies"].find_one({"_id": movie.inserted_id})
+    return Movie(**new_movie)
 
-def create_movie(db: Session, movie: schemas.MovieCreate):
-    db_movie = models.Movie(**movie.dict())
-    db.add(db_movie)
-    db.commit()
-    db.refresh(db_movie)
-    return db_movie
+async def get_movie(id: str) -> Movie:
+    movie = await db["movies"].find_one({"_id": ObjectId(id)})
+    if movie:
+        return Movie(**movie)
+    return None
 
-def get_movie(db: Session, movie_id: int):
-    return db.query(models.Movie).filter(models.Movie.id == movie_id).first()
+async def update_movie(id: str, movie_data: dict) -> Movie:
+    await db["movies"].update_one({"_id": ObjectId(id)}, {"$set": movie_data})
+    updated_movie = await db["movies"].find_one({"_id": ObjectId(id)})
+    if updated_movie:
+        return Movie(**updated_movie)
+    return None
 
-def get_movies(db: Session, skip: int = 0, limit: int = 10):
-    return db.query(models.Movie).offset(skip).limit(limit).all()
-
-def update_movie(db: Session, movie_id: int, movie: schemas.MovieUpdate):
-    db_movie = get_movie(db, movie_id)
-    if db_movie:
-        for key, value in movie.dict(exclude_unset=True).items():
-            setattr(db_movie, key, value)
-        db.commit()
-        db.refresh(db_movie)
-    return db_movie
-
-def delete_movie(db: Session, movie_id: int):
-    db_movie = get_movie(db, movie_id)
-    if db_movie:
-        db.delete(db_movie)
-        db.commit()
-    return db_movie
+async def delete_movie(id: str):
+    result = await db["movies"].delete_one({"_id": ObjectId(id)})
+    return result.deleted_count

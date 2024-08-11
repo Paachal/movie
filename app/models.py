@@ -1,11 +1,38 @@
+# app/models.py
+from pydantic import BaseModel, Field
+from bson import ObjectId
 
-from sqlalchemy import Column, Integer, String
-from .database import Base
+class PyObjectId(ObjectId):
+    @classmethod
+    def __get_validators__(cls):
+        yield cls.validate
 
-class Movie(Base):
-    __tablename__ = "movies"
+    @classmethod
+    def validate(cls, v):
+        if not ObjectId.is_valid(v):
+            raise ValueError('Invalid objectid')
+        return ObjectId(v)
 
-    id = Column(Integer, primary_key=True, index=True)
-    title = Column(String, index=True)
-    description = Column(String, index=True)
-    rating = Column(Integer)
+    @classmethod
+    def __modify_schema__(cls, field_schema):
+        field_schema.update(type="string")
+
+class Movie(BaseModel):
+    id: PyObjectId = Field(default_factory=PyObjectId, alias="_id")
+    title: str
+    description: str
+    rating: float
+    year: int
+
+    class Config:
+        allow_population_by_field_name = True
+        arbitrary_types_allowed = True
+        json_encoders = {ObjectId: str}
+        schema_extra = {
+            "example": {
+                "title": "Inception",
+                "description": "A mind-bending thriller",
+                "rating": 8.8,
+                "year": 2010
+            }
+        }

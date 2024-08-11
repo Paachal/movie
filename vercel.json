@@ -2,14 +2,18 @@
   "version": 2,
   "builds": [
     {
-      "src": "api/main.py",
+      "src": "main.py",
       "use": "@vercel/python"
     }
   ],
+  "env": {
+    "MONGO_URL": "mongodb+srv://paschal:.adgjmptwpaschal@cluster0.dx4v8.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+  },
   "routes": [
     {
       "src": "/(.*)",
-      "dest": "api/main.py"
+      "dest": "main.py"
     }
   ]
 }
+s

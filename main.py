@@ -1,67 +1,54 @@
 from fastapi import FastAPI, HTTPException, Depends
-from motor.motor_asyncio import AsyncIOMotorClient
-from bson import ObjectId
-from pydantic import BaseModel, Field
-from typing import List
+from pymongo import MongoClient
+import os
 
 app = FastAPI()
 
-# MongoDB connection
-MONGO_URL = "your_mongodb_connection_string_here"
-client = AsyncIOMotorClient(MONGO_URL)
-db = client.moviesdb
+# Get the MongoDB connection string from the environment variable
+MONGO_URL = os.getenv("MONGO_URL")
+if not MONGO_URL:
+    raise ValueError("No MONGO_URL environment variable set")
 
-# Pydantic models
-class MovieBase(BaseModel):
-    title: str
-    director: str
-    rating: float
+# Connect to the MongoDB client
+client = MongoClient(MONGO_URL)
+db = client["moviesdb"]  # Access the movies database
 
-class MovieCreate(MovieBase):
-    pass
+@app.get("/")
+def read_root():
+    return {"message": "Welcome to the Movie API"}
 
-class Movie(MovieBase):
-    id: str = Field(default_factory=str)
+# Endpoint to create a new movie
+@app.post("/movies/")
+def create_movie(movie: dict):
+    movie_id = db["movies"].insert_one(movie).inserted_id
+    return {"movie_id": str(movie_id)}
 
-# Dependency to get the database
-async def get_db():
-    return db
-
-# Create a new movie
-@app.post("/movies/", response_model=Movie)
-async def create_movie(movie: MovieCreate, db = Depends(get_db)):
-    movie_dict = movie.dict()
-    result = await db.movies.insert_one(movie_dict)
-    movie_dict["_id"] = str(result.inserted_id)
-    return Movie(**movie_dict)
-
-# Read a movie by its ID
-@app.get("/movies/{movie_id}", response_model=Movie)
-async def read_movie(movie_id: str, db = Depends(get_db)):
-    movie = await db.movies.find_one({"_id": ObjectId(movie_id)})
-    if movie is None:
+# Endpoint to get a movie by its ID
+@app.get("/movies/{movie_id}")
+def get_movie(movie_id: str):
+    movie = db["movies"].find_one({"_id": movie_id})
+    if not movie:
         raise HTTPException(status_code=404, detail="Movie not found")
-    return Movie(id=str(movie["_id"]), **movie)
+    return movie
 
-# Read all movies
-@app.get("/movies/", response_model=List[Movie])
-async def read_movies(skip: int = 0, limit: int = 10, db = Depends(get_db)):
-    movies = await db.movies.find().skip(skip).limit(limit).to_list(length=limit)
-    return [Movie(id=str(movie["_id"]), **movie) for movie in movies]
+# Endpoint to get all movies
+@app.get("/movies/")
+def get_movies():
+    movies = db["movies"].find()
+    return list(movies)
 
-
-@app.put("/movies/{movie_id}", response_model=Movie)
-async def update_movie(movie_id: str, movie: MovieCreate, db = Depends(get_db)):
-    result = await db.movies.update_one({"_id": ObjectId(movie_id)}, {"$set": movie.dict()})
+# Endpoint to update a movie by its ID
+@app.put("/movies/{movie_id}")
+def update_movie(movie_id: str, movie: dict):
+    result = db["movies"].update_one({"_id": movie_id}, {"$set": movie})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Movie not found")
-    updated_movie = await db.movies.find_one({"_id": ObjectId(movie_id)})
-    return Movie(id=str(updated_movie["_id"]), **updated_movie)
+    return {"message": "Movie updated successfully"}
 
-# Delete a movie
-@app.delete("/movies/{movie_id}", response_model=Movie)
-async def delete_movie(movie_id: str, db = Depends(get_db)):
-    result = await db.movies.delete_one({"_id": ObjectId(movie_id)})
+# Endpoint to delete a movie by its ID
+@app.delete("/movies/{movie_id}")
+def delete_movie(movie_id: str):
+    result = db["movies"].delete_one({"_id": movie_id})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Movie not found")
     return {"message": "Movie deleted successfully"}
